@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { AlertCircle } from "lucide-react"
+import { db, collection, query, orderBy, limit, onSnapshot } from "@/lib/firebase"
 
 interface DataPoint {
   time: string
@@ -15,35 +16,35 @@ export default function SoilMoistureChart() {
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Use the Next API proxy to avoid CORS / mixed-content issues.
-        const response = await fetch("/api/predict")
-        if (response.ok) {
-          const result = await response.json()
-          const hour = new Date().getHours()
-          setData((prev) => {
-            const newData = [...prev]
-            newData.push({
-              time: `${hour}:00`,
-              value: result.soil_moisture,
-            })
-            if (newData.length > 24) newData.shift()
-            return newData
-          })
-          setError(false)
-        }
-      } catch (err) {
-        setError(true)
-        console.error("Error fetching soil moisture:", err)
-      } finally {
+    try {
+      const sensorRef = collection(db, "sensor_data")
+      const q = query(sensorRef, orderBy("timestamp", "desc"), limit(24))
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const newData: DataPoint[] = snapshot.docs.map(doc => {
+          const docData = doc.data()
+          const timestamp = docData.timestamp?.seconds || docData.timestamp || Date.now() / 1000
+          return {
+            time: new Date(timestamp * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            value: docData.soil || 0
+          }
+        }).reverse()
+        
+        setData(newData)
+        setError(false)
         setLoading(false)
-      }
-    }
+      }, (err) => {
+        console.error("Error fetching soil moisture:", err)
+        setError(true)
+        setLoading(false)
+      })
 
-    fetchData()
-    const interval = setInterval(fetchData, 5000)
-    return () => clearInterval(interval)
+      return () => unsubscribe()
+    } catch (err) {
+      console.error("Setup error:", err)
+      setError(true)
+      setLoading(false)
+    }
   }, [])
 
   if (error && data.length === 0) {

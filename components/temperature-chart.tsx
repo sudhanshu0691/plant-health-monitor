@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+import { db, collection, query, orderBy, limit, onSnapshot } from "@/lib/firebase"
 
 interface DataPoint {
   time: string
@@ -12,26 +13,29 @@ export default function TemperatureChart() {
   const [data, setData] = useState<DataPoint[]>([])
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const hour = new Date().getHours()
-        setData((prev) => {
-          const newData = [...prev]
-          newData.push({
-            time: `${hour}:00`,
-            value: 15 + Math.random() * 15,
-          })
-          if (newData.length > 24) newData.shift()
-          return newData
-        })
-      } catch (err) {
+    try {
+      const sensorRef = collection(db, "sensor_data")
+      const q = query(sensorRef, orderBy("timestamp", "desc"), limit(24))
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const newData: DataPoint[] = snapshot.docs.map(doc => {
+          const docData = doc.data()
+          const timestamp = docData.timestamp?.seconds || docData.timestamp || Date.now() / 1000
+          return {
+            time: new Date(timestamp * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            value: docData.temp || 0
+          }
+        }).reverse()
+        
+        setData(newData)
+      }, (err) => {
         console.error("Error fetching temperature:", err)
-      }
-    }
+      })
 
-    fetchData()
-    const interval = setInterval(fetchData, 5000)
-    return () => clearInterval(interval)
+      return () => unsubscribe()
+    } catch (err) {
+      console.error("Setup error:", err)
+    }
   }, [])
 
   return (

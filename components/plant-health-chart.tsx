@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+import { db, collection, query, orderBy, limit, onSnapshot } from "@/lib/firebase"
 
 interface DataPoint {
   time: string
@@ -13,32 +14,36 @@ export default function PlantHealthChart() {
   const [data, setData] = useState<DataPoint[]>([])
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const hour = new Date().getHours()
-        const healthValue = 75 + Math.random() * 20
-        let status = "Great"
-        if (healthValue < 30) status = "Needs Water"
-        else if (healthValue < 70) status = "Optimal"
-
-        setData((prev) => {
-          const newData = [...prev]
-          newData.push({
-            time: `${hour}:00`,
+    try {
+      const sensorRef = collection(db, "sensor_data")
+      const q = query(sensorRef, orderBy("timestamp", "desc"), limit(24))
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const newData: DataPoint[] = snapshot.docs.map(doc => {
+          const docData = doc.data()
+          const timestamp = docData.timestamp?.seconds || docData.timestamp || Date.now() / 1000
+          const healthValue = docData.plant_health || 0
+          
+          let status = "Great"
+          if (healthValue < 30) status = "Needs Water"
+          else if (healthValue < 70) status = "Optimal"
+          
+          return {
+            time: new Date(timestamp * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
             value: healthValue,
-            status,
-          })
-          if (newData.length > 24) newData.shift()
-          return newData
-        })
-      } catch (err) {
+            status
+          }
+        }).reverse()
+        
+        setData(newData)
+      }, (err) => {
         console.error("Error fetching plant health:", err)
-      }
-    }
+      })
 
-    fetchData()
-    const interval = setInterval(fetchData, 5000)
-    return () => clearInterval(interval)
+      return () => unsubscribe()
+    } catch (err) {
+      console.error("Setup error:", err)
+    }
   }, [])
 
   return (
