@@ -460,14 +460,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Chat Icon */}
-            <button
-              onClick={() => setShowChatPanel(!showChatPanel)}
-              className="p-2 hover:bg-muted rounded-lg transition"
-            >
-              <MessageCircle className="h-5 w-5 text-muted-foreground" />
-            </button>
-
             {/* User Profile Icon */}
             <div className="relative">
               <button
@@ -863,6 +855,17 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Floating Chat Button */}
+      {!showChatPanel && (
+        <button
+          onClick={() => setShowChatPanel(true)}
+          className="fixed bottom-6 right-6 p-4 bg-green-600 hover:bg-green-700 text-white rounded-full shadow-lg transition-all duration-300 hover:scale-110 z-40"
+          title="Open Chat"
+        >
+          <MessageCircle className="h-6 w-6" />
+        </button>
       )}
 
       {/* Footer */}
