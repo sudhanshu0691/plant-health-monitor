@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useState, useRef, Component } from "react"
+import { db, collection, query, orderBy, limit, onSnapshot } from "@/lib/firebase"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -87,6 +88,38 @@ export default function Dashboard() {
   const [isListening, setIsListening] = useState(false)
   const [micError, setMicError] = useState("")
   const recognitionRef = useRef<any>(null)
+
+  // Firebase real-time sensor data
+  const [sensorData, setSensorData] = useState({
+    temp: 0,
+    rain: 0,
+    soil: 0,
+    plant_health: 0,
+  })
+
+  useEffect(() => {
+    // Fetch latest sensor data from Firebase
+    try {
+      const sensorRef = collection(db, "sensor_data")
+      const q = query(sensorRef, orderBy("timestamp", "desc"), limit(1))
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        if (!snapshot.empty) {
+          const docData = snapshot.docs[0].data()
+          setSensorData({
+            temp: docData.temp || 0,
+            rain: docData.rain || 0,
+            soil: docData.soil || 0,
+            plant_health: docData.plant_health || 0,
+          })
+        }
+      })
+
+      return () => unsubscribe()
+    } catch (error) {
+      console.error("Error fetching sensor data:", error)
+    }
+  }, [])
 
   useEffect(() => {
     const checkBackend = async () => {
@@ -497,8 +530,10 @@ export default function Dashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">65%</div>
-                  <p className="text-xs text-muted-foreground mt-1">Optimal level</p>
+                  <div className="text-2xl font-bold">{sensorData.soil.toFixed(1)}%</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {sensorData.soil > 70 ? "Wet" : sensorData.soil > 40 ? "Optimal level" : "Needs water"}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -510,8 +545,10 @@ export default function Dashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">24°C</div>
-                  <p className="text-xs text-muted-foreground mt-1">Perfect for growth</p>
+                  <div className="text-2xl font-bold">{sensorData.temp.toFixed(1)}°C</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {sensorData.temp > 30 ? "High" : sensorData.temp < 15 ? "Low" : "Perfect for growth"}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -523,7 +560,7 @@ export default function Dashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">12mm</div>
+                  <div className="text-2xl font-bold">{sensorData.rain.toFixed(1)}mm</div>
                   <p className="text-xs text-muted-foreground mt-1">Last 24 hours</p>
                 </CardContent>
               </Card>
@@ -536,8 +573,10 @@ export default function Dashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">92%</div>
-                  <p className="text-xs text-muted-foreground mt-1">Excellent</p>
+                  <div className="text-2xl font-bold">{sensorData.plant_health.toFixed(1)}%</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {sensorData.plant_health > 80 ? "Excellent" : sensorData.plant_health > 50 ? "Good" : "Needs attention"}
+                  </p>
                 </CardContent>
               </Card>
             </div>
