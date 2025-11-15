@@ -43,7 +43,7 @@ export default function TemperatureChart() {
       <LineChart data={data.length ? data : [{ time: "0:00", value: 20 }]}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
         <XAxis dataKey="time" stroke="var(--muted-foreground)" />
-        <YAxis stroke="var(--muted-foreground)" domain={[0, 50]} />
+        <YAxis stroke="var(--muted-foreground)" domain={[0, 50]} label={{ value: '°C', angle: -90, position: 'insideLeft' }} />
         <Tooltip
           contentStyle={{
             backgroundColor: "var(--card)",
@@ -51,6 +51,7 @@ export default function TemperatureChart() {
             borderRadius: "var(--radius)",
           }}
           cursor={{ stroke: "var(--ring)" }}
+          formatter={(value: number) => [`${value}°C`, 'Temperature']}
         />
         <Line
           type="monotone"

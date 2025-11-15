@@ -85,6 +85,7 @@ export default function Dashboard() {
   const [weatherData, setWeatherData] = useState<Record<string, any>>({})
   const [forecast, setForecast] = useState<ForecastDay[]>([])
   const [weatherLoading, setWeatherLoading] = useState(true)
+  const [currentWeather, setCurrentWeather] = useState({ temp: 0, condition: "", humidity: 0, wind: 0 })
   const [isListening, setIsListening] = useState(false)
   const [micError, setMicError] = useState("")
   const recognitionRef = useRef<any>(null)
@@ -187,8 +188,27 @@ export default function Dashboard() {
     const fetchWeatherData = async () => {
       try {
         setWeatherLoading(true)
+        const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || "9650883a16c1c44d3a37b3f7eb15648c"
+        
+        // Fetch current weather
+        const currentResponse = await fetch(
+          `https://api.openweathermap.org/data/2.5/weather?lat=${currentLat}&lon=${currentLon}&appid=${apiKey}&units=metric`
+        )
+        
+        if (currentResponse.ok) {
+          const currentData = await currentResponse.json()
+          const condition = currentData.weather[0].description
+          setCurrentWeather({
+            temp: Math.round(currentData.main.temp),
+            condition: condition.charAt(0).toUpperCase() + condition.slice(1),
+            humidity: currentData.main.humidity,
+            wind: Math.round(currentData.wind.speed * 3.6)
+          })
+        }
+        
+        // Fetch current weather and 7-day forecast
         const response = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${currentLat}&longitude=${currentLon}&current=temperature_2m,weather_code,humidity,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&timezone=auto`,
+          `https://api.openweathermap.org/data/2.5/forecast?lat=${currentLat}&lon=${currentLon}&appid=${apiKey}&units=metric&cnt=40`,
         )
         
         if (!response.ok) {
@@ -197,25 +217,55 @@ export default function Dashboard() {
         
         const data = await response.json()
         setWeatherData(data)
-        console.log("[v0] Weather data updated:", data)
+        console.log("Weather data updated:", data)
 
-        // Generate forecast from API data
-        if (data.daily) {
-          const forecastDays: ForecastDay[] = data.daily.time.map((date: string, idx: number) => {
-            const weatherCode = data.daily.weather_code[idx]
+        // Generate forecast from API data - group by day
+        if (data.list) {
+          const dailyData: Record<string, any[]> = {}
+          
+          data.list.forEach((item: any) => {
+            const date = new Date(item.dt * 1000).toISOString().split('T')[0]
+            if (!dailyData[date]) {
+              dailyData[date] = []
+            }
+            dailyData[date].push(item)
+          })
+
+          const forecastDays: ForecastDay[] = Object.entries(dailyData).slice(0, 7).map(([date, items], idx) => {
+            const temps = items.map((i: any) => i.main.temp)
+            const high = Math.round(Math.max(...temps))
+            const low = Math.round(Math.min(...temps))
+            const weatherId = items[0].weather[0].id
+            
             let icon: "sun" | "cloud" | "rain" = "cloud"
-            let condition = "Cloudy"
-
-            if (weatherCode === 0 || weatherCode === 1) {
+            let condition = items[0].weather[0].description
+            
+            // Better weather condition mapping
+            if (weatherId >= 200 && weatherId < 600) {
+              icon = "rain"
+              condition = weatherId >= 500 && weatherId < 600 ? "Rainy" : "Thunderstorm"
+            } else if (weatherId === 800) {
               icon = "sun"
               condition = "Sunny"
-            } else if (weatherCode >= 2 && weatherCode <= 48) {
+            } else if (weatherId === 801) {
+              icon = "cloud"
+              condition = "Partly Cloudy"
+            } else if (weatherId > 801) {
               icon = "cloud"
               condition = "Cloudy"
-            } else if (weatherCode >= 51 && weatherCode <= 99) {
-              icon = "rain"
-              condition = "Rainy"
+            } else {
+              icon = "cloud"
+              condition = items[0].weather[0].main
             }
+            
+            // Capitalize first letter if using API description
+            if (condition.includes(' ') || condition.length > 10) {
+              condition = condition.charAt(0).toUpperCase() + condition.slice(1)
+            }
+
+            const precipitation = items.reduce((acc: number, i: any) => acc + (i.pop || 0), 0) / items.length * 100
+            const humidity = Math.round(items.reduce((acc: number, i: any) => acc + i.main.humidity, 0) / items.length)
+            const wind = Math.round(items.reduce((acc: number, i: any) => acc + i.wind.speed, 0) / items.length * 3.6)
 
             return {
               date,
@@ -225,13 +275,13 @@ export default function Dashboard() {
                   : idx === 1
                     ? "Tomorrow"
                     : new Date(date).toLocaleDateString("en-US", { weekday: "short" }),
-              high: Math.round(data.daily.temperature_2m_max[idx]),
-              low: Math.round(data.daily.temperature_2m_min[idx]),
+              high,
+              low,
               condition,
               icon,
-              precipitation: data.daily.precipitation_probability_max[idx] || 0,
-              humidity: 65,
-              wind: Math.round(data.daily.wind_speed_10m_max?.[idx] || 0),
+              precipitation: Math.round(precipitation),
+              humidity,
+              wind,
             }
           })
           setForecast(forecastDays)
@@ -470,10 +520,17 @@ export default function Dashboard() {
               </button>
               {showUserProfile && (
                 <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-border rounded-lg shadow-lg p-4 z-50">
-                  <p className="font-semibold text-sm mb-3">User Profile</p>
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <span className="text-muted-foreground">Name:</span> Farmer John
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="font-semibold text-sm">User Profile</p>
+                    <div className="flex items-center gap-1">
+                      <div className={`h-2 w-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`} />
+                      <span className={`text-xs ${isConnected ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                        {isConnected ? "Online" : "Offline"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-sm"> <p>
+                      <span className="text-muted-foreground">Name:</span> Sudhanshu Singh+
                     </p>
                     <p>
                       <span className="text-muted-foreground">Farm:</span> Green Fields
@@ -490,7 +547,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-2">
               <div className={`h-2 w-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`} />
               <span className="text-xs text-muted-foreground hidden sm:inline">
-                {isConnected ? "Connected" : "Offline"}
+                {isConnected ? "Online" : "Offline"}
               </span>
             </div>
           </div>
@@ -635,6 +692,46 @@ export default function Dashboard() {
               <h2 className="text-3xl font-bold tracking-tight text-foreground mb-2">Weather Forecast & Map</h2>
               <p className="text-muted-foreground">Search locations, view 7-day forecast and interactive weather map</p>
             </div>
+
+            {/* Current Weather Card */}
+            <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-slate-800 dark:to-slate-900 border-2 border-blue-200 dark:border-blue-900">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Current Weather - {currentLocation}</span>
+                  <span className="text-sm font-normal text-muted-foreground">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {weatherLoading ? (
+                  <div className="flex items-center justify-center h-32">
+                    <p className="text-muted-foreground">Loading current weather...</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="text-center">
+                      <Thermometer className="h-8 w-8 mx-auto mb-2 text-red-500" />
+                      <p className="text-3xl font-bold">{currentWeather.temp}°C</p>
+                      <p className="text-sm text-muted-foreground">{currentWeather.condition}</p>
+                    </div>
+                    <div className="text-center">
+                      <Droplets className="h-8 w-8 mx-auto mb-2 text-blue-500" />
+                      <p className="text-3xl font-bold">{currentWeather.humidity}%</p>
+                      <p className="text-sm text-muted-foreground">Humidity</p>
+                    </div>
+                    <div className="text-center">
+                      <Wind className="h-8 w-8 mx-auto mb-2 text-gray-500" />
+                      <p className="text-3xl font-bold">{currentWeather.wind}</p>
+                      <p className="text-sm text-muted-foreground">km/h Wind</p>
+                    </div>
+                    <div className="text-center">
+                      <Cloud className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                      <p className="text-3xl font-bold">{forecast[0]?.precipitation || 0}%</p>
+                      <p className="text-sm text-muted-foreground">Precipitation</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Daily Forecast */}
             <Card className="bg-white/60 backdrop-blur-sm dark:bg-slate-800/60">

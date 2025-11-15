@@ -19,8 +19,32 @@ export default function WeatherMap({ latitude = 28.6139, longitude = 77.209, onL
   const [currentLocation, setCurrentLocation] = useState("New Delhi")
   const [currentLat, setCurrentLat] = useState(latitude)
   const [currentLon, setCurrentLon] = useState(longitude)
+  const [weatherInfo, setWeatherInfo] = useState({ temp: 24, condition: "Partly Cloudy" })
   const mapInstanceRef = useRef<any>(null)
   const markerRef = useRef<any>(null)
+  const weatherLayerRef = useRef<any>(null)
+
+  const fetchWeather = async (lat: number, lon: number) => {
+    try {
+      const apiKey = "9650883a16c1c44d3a37b3f7eb15648c"
+      const response = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`
+      )
+      if (response.ok) {
+        const data = await response.json()
+        setWeatherInfo({
+          temp: Math.round(data.main.temp),
+          condition: data.weather[0].description
+        })
+      }
+    } catch (error) {
+      console.error("Weather fetch error:", error)
+    }
+  }
+
+  useEffect(() => {
+    fetchWeather(currentLat, currentLon)
+  }, [currentLat, currentLon])
 
   useEffect(() => {
     if (!mapRef.current) return
@@ -47,6 +71,18 @@ export default function WeatherMap({ latitude = 28.6139, longitude = 77.209, onL
           maxZoom: 19,
         }).addTo(map)
 
+        // Add OpenWeatherMap weather layer
+        const apiKey = "9650883a16c1c44d3a37b3f7eb15648c"
+        const weatherLayer = L.tileLayer(
+          `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${apiKey}`,
+          {
+            attribution: "Weather data © OpenWeatherMap",
+            opacity: 0.5,
+            maxZoom: 19,
+          }
+        ).addTo(map)
+        weatherLayerRef.current = weatherLayer
+
         const marker = L.marker([currentLat, currentLon], {
           icon: L.icon({
             iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
@@ -59,7 +95,7 @@ export default function WeatherMap({ latitude = 28.6139, longitude = 77.209, onL
         })
           .addTo(map)
           .bindPopup(
-            `<div style="font-size: 12px"><strong>${currentLocation}</strong><br/>Temperature: 24°C<br/>Condition: Partly Cloudy</div>`,
+            `<div style="font-size: 12px"><strong>${currentLocation}</strong><br/>Temperature: ${weatherInfo.temp}°C<br/>Condition: ${weatherInfo.condition}</div>`,
           )
           .openPopup()
 
@@ -85,10 +121,10 @@ export default function WeatherMap({ latitude = 28.6139, longitude = 77.209, onL
       mapInstanceRef.current.setView([currentLat, currentLon], 10)
       markerRef.current.setLatLng([currentLat, currentLon])
       markerRef.current.setPopupContent(
-        `<div style="font-size: 12px"><strong>${currentLocation}</strong><br/>Temperature: 24°C<br/>Condition: Partly Cloudy</div>`,
+        `<div style="font-size: 12px"><strong>${currentLocation}</strong><br/>Temperature: ${weatherInfo.temp}°C<br/>Condition: ${weatherInfo.condition}</div>`,
       )
     }
-  }, [currentLat, currentLon, currentLocation])
+  }, [currentLat, currentLon, currentLocation, weatherInfo])
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return

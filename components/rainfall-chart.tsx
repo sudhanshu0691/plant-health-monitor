@@ -43,7 +43,7 @@ export default function RainfallChart() {
       <LineChart data={data.length ? data : [{ time: "0:00", value: 0 }]}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
         <XAxis dataKey="time" stroke="var(--muted-foreground)" />
-        <YAxis stroke="var(--muted-foreground)" />
+        <YAxis stroke="var(--muted-foreground)" label={{ value: 'mm', angle: -90, position: 'insideLeft' }} />
         <Tooltip
           contentStyle={{
             backgroundColor: "var(--card)",
@@ -51,6 +51,7 @@ export default function RainfallChart() {
             borderRadius: "var(--radius)",
           }}
           cursor={{ stroke: "var(--ring)" }}
+          formatter={(value: number) => [`${value} mm`, 'Rainfall']}
         />
         <Line
           type="monotone"

@@ -51,7 +51,7 @@ export default function PlantHealthChart() {
       <LineChart data={data.length ? data : [{ time: "0:00", value: 85, status: "Great" }]}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
         <XAxis dataKey="time" stroke="var(--muted-foreground)" />
-        <YAxis stroke="var(--muted-foreground)" domain={[0, 100]} />
+        <YAxis stroke="var(--muted-foreground)" domain={[0, 100]} label={{ value: '%', angle: -90, position: 'insideLeft' }} />
         <Tooltip
           contentStyle={{
             backgroundColor: "var(--card)",
