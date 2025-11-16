@@ -102,6 +102,21 @@ export default function Dashboard() {
     plant_health: 0,
   })
 
+  // Load saved location from localStorage on mount
+  useEffect(() => {
+    const savedLocation = localStorage.getItem("userLocation")
+    if (savedLocation) {
+      try {
+        const { location, lat, lon } = JSON.parse(savedLocation)
+        setCurrentLocation(location)
+        setCurrentLat(lat)
+        setCurrentLon(lon)
+      } catch (error) {
+        console.error("Error loading saved location:", error)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     // Fetch latest sensor data from Firebase
     try {
@@ -458,6 +473,12 @@ export default function Dashboard() {
     setCurrentLat(lat)
     setCurrentLon(lon)
     setCurrentLocation(location)
+    
+    // Save location to localStorage
+    localStorage.setItem(
+      "userLocation",
+      JSON.stringify({ location, lat, lon })
+    )
   }
 
   const toggleMicrophone = () => {
@@ -782,9 +803,9 @@ export default function Dashboard() {
             </Card>
 
             {/* Weather Details */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               {/* Detailed Weather Info */}
-              <div className="lg:col-span-2">
+              <div>
                 <Card className="bg-white/60 backdrop-blur-sm dark:bg-slate-800/60">
                   <CardHeader>
                     <CardTitle>
@@ -845,11 +866,13 @@ export default function Dashboard() {
                 </Card>
               </div>
 
-              <Card className="bg-white/60 backdrop-blur-sm dark:bg-slate-800/60 overflow-hidden flex flex-col min-h-96">
+              {/* Interactive Weather Map - Full Width */}
+              <Card className="bg-white/60 backdrop-blur-sm dark:bg-slate-800/60 overflow-hidden flex flex-col">
                 <CardHeader>
-                  <CardTitle className="text-lg">Location Weather Map</CardTitle>
+                  <CardTitle className="text-lg">Interactive Location Weather Map</CardTitle>
+                  <CardDescription>Search and select any location to view weather conditions</CardDescription>
                 </CardHeader>
-                <CardContent className="p-4 flex-1 overflow-hidden flex flex-col">
+                <CardContent className="p-4 flex-1 overflow-hidden flex flex-col min-h-[600px]">
                   <WeatherMap latitude={currentLat} longitude={currentLon} onLocationChange={handleLocationChange} />
                 </CardContent>
               </Card>

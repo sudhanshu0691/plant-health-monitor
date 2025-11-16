@@ -24,6 +24,21 @@ export default function WeatherMap({ latitude = 28.6139, longitude = 77.209, onL
   const markerRef = useRef<any>(null)
   const weatherLayerRef = useRef<any>(null)
 
+  // Load saved location from localStorage
+  useEffect(() => {
+    const savedLocation = localStorage.getItem("userLocation")
+    if (savedLocation) {
+      try {
+        const { location, lat, lon } = JSON.parse(savedLocation)
+        setCurrentLocation(location)
+        setCurrentLat(lat)
+        setCurrentLon(lon)
+      } catch (error) {
+        console.error("Error loading saved location:", error)
+      }
+    }
+  }, [])
+
   const fetchWeather = async (lat: number, lon: number) => {
     try {
       const apiKey = "9650883a16c1c44d3a37b3f7eb15648c"
