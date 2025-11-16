@@ -1,21 +1,37 @@
 "use client";
 
 import FirebaseGraph from "@/components/firebase-graph";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { db, collection, query, orderBy, limit, onSnapshot } from "@/lib/firebase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNotifications } from "@/contexts/NotificationContext";
+import { 
+  analyzeSensorReading, 
+  getParameterStatus, 
+  getStatusBgColor, 
+  SensorReading 
+} from "@/lib/agroMonitoring";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { TrendingUp, Bell, BellOff } from "lucide-react";
 
 interface SensorData {
   temp: number;
   rain: number;
   soil: number;
   plant_health: number;
+  humidity?: number;
+  light_intensity?: number;
   timestamp: any;
 }
 
 export default function FirebaseDashboard() {
   const [latestData, setLatestData] = useState<SensorData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const { sendMultipleAlerts, sendInfoNotification } = useNotifications();
+  const previousDataRef = useRef<SensorData | null>(null);
 
   useEffect(() => {
     try {
@@ -25,13 +41,37 @@ export default function FirebaseDashboard() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         if (!snapshot.empty) {
           const docData = snapshot.docs[0].data();
-          setLatestData({
+          const newData: SensorData = {
             temp: docData.temp || 0,
             rain: docData.rain || 0,
             soil: docData.soil || 0,
             plant_health: docData.plant_health || 0,
+            humidity: docData.humidity,
+            light_intensity: docData.light_intensity,
             timestamp: docData.timestamp,
-          });
+          };
+          
+          setLatestData(newData);
+          
+          // Check for alerts only if notifications are enabled and data has changed
+          if (notificationsEnabled && previousDataRef.current) {
+            const sensorReading: SensorReading = {
+              temp: newData.temp,
+              rain: newData.rain,
+              soil: newData.soil,
+              plant_health: newData.plant_health,
+              humidity: newData.humidity,
+              light_intensity: newData.light_intensity,
+              timestamp: newData.timestamp,
+            };
+            
+            const alerts = analyzeSensorReading(sensorReading);
+            if (alerts.length > 0) {
+              sendMultipleAlerts(alerts);
+            }
+          }
+          
+          previousDataRef.current = newData;
         }
         setIsLoading(false);
       }, (error) => {
@@ -44,23 +84,64 @@ export default function FirebaseDashboard() {
       console.error("Setup error:", error);
       setIsLoading(false);
     }
-  }, []);
+  }, [notificationsEnabled, sendMultipleAlerts]);
+
+  const toggleNotifications = () => {
+    setNotificationsEnabled(!notificationsEnabled);
+    if (!notificationsEnabled) {
+      sendInfoNotification("Notifications enabled");
+    } else {
+      sendInfoNotification("Notifications disabled");
+    }
+  };
+
+  const getParameterStatusInfo = (param: string, value: number) => {
+    const status = getParameterStatus(param, value);
+    const statusBg = getStatusBgColor(status);
+    const statusEmoji = status === 'normal' ? '✅' : status === 'warning' ? '⚠️' : '🚨';
+    const statusText = status === 'normal' ? 'Normal' : status === 'warning' ? 'Warning' : 'Critical';
+    
+    return { statusBg, statusEmoji, statusText, status };
+  };
 
   return (
     <div className="container mx-auto py-8 px-4">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">Firebase Real-Time Dashboard</h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Monitor your IoT sensor data in real-time from Firestore
-        </p>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-4xl font-bold mb-2">Firebase Real-Time Dashboard</h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Monitor your IoT sensor data in real-time from Firestore
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant={notificationsEnabled ? "default" : "outline"}
+            size="sm"
+            onClick={toggleNotifications}
+          >
+            {notificationsEnabled ? <Bell className="w-4 h-4 mr-2" /> : <BellOff className="w-4 h-4 mr-2" />}
+            {notificationsEnabled ? "Notifications On" : "Notifications Off"}
+          </Button>
+          <Link href="/analysis">
+            <Button variant="outline" size="sm">
+              <TrendingUp className="w-4 h-4 mr-2" />
+              View Analysis
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Real-Time Monitoring Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <Card className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 border-red-200 dark:border-red-800">
+        <Card className={latestData ? getParameterStatusInfo('temp', latestData.temp).statusBg : "bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 border-red-200 dark:border-red-800"}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-red-800 dark:text-red-200">
-              🌡️ Temperature
+            <CardTitle className="text-sm font-medium flex justify-between items-center">
+              <span>🌡️ Temperature</span>
+              {latestData && (
+                <Badge variant={getParameterStatusInfo('temp', latestData.temp).status === 'normal' ? 'default' : getParameterStatusInfo('temp', latestData.temp).status === 'warning' ? 'secondary' : 'destructive'}>
+                  {getParameterStatusInfo('temp', latestData.temp).statusEmoji}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -70,21 +151,26 @@ export default function FirebaseDashboard() {
               </div>
             ) : (
               <>
-                <div className="text-3xl font-bold text-red-600 dark:text-red-400">
+                <div className="text-3xl font-bold">
                   {latestData?.temp.toFixed(2) || "N/A"}°C
                 </div>
-                <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                  {latestData?.temp && latestData.temp > 30 ? "🔥 High" : latestData?.temp && latestData.temp < 15 ? "❄️ Low" : "✓ Normal"}
+                <p className="text-xs mt-1">
+                  {latestData && getParameterStatusInfo('temp', latestData.temp).statusText}
                 </p>
               </>
             )}
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800">
+        <Card className={latestData ? getParameterStatusInfo('rain', latestData.rain).statusBg : "bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800"}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-blue-800 dark:text-blue-200">
-              🌧️ Rainfall
+            <CardTitle className="text-sm font-medium flex justify-between items-center">
+              <span>🌧️ Rainfall</span>
+              {latestData && (
+                <Badge variant={getParameterStatusInfo('rain', latestData.rain).status === 'normal' ? 'default' : getParameterStatusInfo('rain', latestData.rain).status === 'warning' ? 'secondary' : 'destructive'}>
+                  {getParameterStatusInfo('rain', latestData.rain).statusEmoji}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -94,21 +180,26 @@ export default function FirebaseDashboard() {
               </div>
             ) : (
               <>
-                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                <div className="text-3xl font-bold">
                   {latestData?.rain.toFixed(2) || "N/A"} mm
                 </div>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                  {latestData?.rain && latestData.rain > 5 ? "🌊 Heavy" : latestData?.rain && latestData.rain > 0 ? "💧 Light" : "☀️ Dry"}
+                <p className="text-xs mt-1">
+                  {latestData && getParameterStatusInfo('rain', latestData.rain).statusText}
                 </p>
               </>
             )}
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 border-green-200 dark:border-green-800">
+        <Card className={latestData ? getParameterStatusInfo('soil', latestData.soil).statusBg : "bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 border-green-200 dark:border-green-800"}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-green-800 dark:text-green-200">
-              🌱 Soil Moisture
+            <CardTitle className="text-sm font-medium flex justify-between items-center">
+              <span>🌱 Soil Moisture</span>
+              {latestData && (
+                <Badge variant={getParameterStatusInfo('soil', latestData.soil).status === 'normal' ? 'default' : getParameterStatusInfo('soil', latestData.soil).status === 'warning' ? 'secondary' : 'destructive'}>
+                  {getParameterStatusInfo('soil', latestData.soil).statusEmoji}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -118,21 +209,26 @@ export default function FirebaseDashboard() {
               </div>
             ) : (
               <>
-                <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+                <div className="text-3xl font-bold">
                   {latestData?.soil.toFixed(2) || "N/A"}%
                 </div>
-                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                  {latestData?.soil && latestData.soil > 70 ? "💧 Wet" : latestData?.soil && latestData.soil > 40 ? "✓ Good" : "⚠️ Dry"}
+                <p className="text-xs mt-1">
+                  {latestData && getParameterStatusInfo('soil', latestData.soil).statusText}
                 </p>
               </>
             )}
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-950 dark:to-yellow-900 border-yellow-200 dark:border-yellow-800">
+        <Card className={latestData ? getParameterStatusInfo('plant_health', latestData.plant_health).statusBg : "bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-950 dark:to-yellow-900 border-yellow-200 dark:border-yellow-800"}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-              🌿 Plant Health
+            <CardTitle className="text-sm font-medium flex justify-between items-center">
+              <span>🌿 Plant Health</span>
+              {latestData && (
+                <Badge variant={getParameterStatusInfo('plant_health', latestData.plant_health).status === 'normal' ? 'default' : getParameterStatusInfo('plant_health', latestData.plant_health).status === 'warning' ? 'secondary' : 'destructive'}>
+                  {getParameterStatusInfo('plant_health', latestData.plant_health).statusEmoji}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -142,11 +238,11 @@ export default function FirebaseDashboard() {
               </div>
             ) : (
               <>
-                <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">
+                <div className="text-3xl font-bold">
                   {latestData?.plant_health.toFixed(2) || "N/A"}%
                 </div>
-                <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                  {latestData?.plant_health && latestData.plant_health > 80 ? "🌟 Excellent" : latestData?.plant_health && latestData.plant_health > 50 ? "✓ Good" : "⚠️ Attention"}
+                <p className="text-xs mt-1">
+                  {latestData && getParameterStatusInfo('plant_health', latestData.plant_health).statusText}
                 </p>
               </>
             )}

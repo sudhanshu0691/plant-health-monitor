@@ -1,10 +1,11 @@
 "use client"
 
 import React, { useEffect, useState, useRef, Component } from "react"
-import { db, collection, query, orderBy, limit, onSnapshot } from "@/lib/firebase"
+import { db, collection, query, orderBy, limit, onSnapshot, where, getDocs } from "@/lib/firebase"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import {
   Leaf,
   CloudRain,
@@ -21,8 +22,15 @@ import {
   Mic,
   MicOff,
   Newspaper,
+  BarChart3,
+  TrendingUp,
+  BellOff,
+  Calendar,
+  CheckCircle,
+  AlertTriangle,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
 import SoilMoistureChart from "@/components/soil-moisture-chart"
 import TemperatureChart from "@/components/temperature-chart"
 import RainfallChart from "@/components/rainfall-chart"
@@ -32,6 +40,19 @@ import WeatherMap from "@/components/weather-map"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { AgricultureNews } from "@/components/agriculture-news"
 import { motion, AnimatePresence } from "framer-motion"
+import FirebaseGraph from "@/components/firebase-graph"
+import { useNotifications } from "@/contexts/NotificationContext"
+import { 
+  analyzeSensorReading, 
+  getParameterStatus, 
+  getStatusBgColor, 
+  SensorReading,
+  getParameterRecommendation
+} from "@/lib/agroMonitoring"
+import { 
+  DailyHealthReport, 
+  generateDailyHealthReport 
+} from "@/lib/dailyAnalysis"
 
 // Error boundary to catch render-time errors from `react-markdown`
 class MarkdownErrorBoundary extends Component<React.PropsWithChildren<{ fallback?: React.ReactNode }>, { hasError: boolean }> {
@@ -78,6 +99,7 @@ export default function Dashboard() {
   const [showChatPanel, setShowChatPanel] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showUserProfile, setShowUserProfile] = useState(false)
+  const [notificationsList, setNotificationsList] = useState<Array<{id: string, message: string, status: string, timestamp: Date, parameter: string}>>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [chatLoading, setChatLoading] = useState(false)
@@ -101,6 +123,15 @@ export default function Dashboard() {
     soil: 0,
     plant_health: 0,
   })
+
+  // Analysis Dashboard states
+  const [analysisData, setAnalysisData] = useState<any>(null)
+  const [analysisLoading, setAnalysisLoading] = useState(true)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true)
+  const { sendMultipleAlerts, sendInfoNotification } = useNotifications()
+  const previousAnalysisDataRef = useRef<any>(null)
+  const [dailyReport, setDailyReport] = useState<DailyHealthReport | null>(null)
+  const [dailyReadings, setDailyReadings] = useState<SensorReading[]>([])
 
   // Load saved location from localStorage on mount
   useEffect(() => {
@@ -126,19 +157,235 @@ export default function Dashboard() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         if (!snapshot.empty) {
           const docData = snapshot.docs[0].data()
-          setSensorData({
+          const newData = {
             temp: docData.temp || 0,
             rain: docData.rain || 0,
             soil: docData.soil || 0,
             plant_health: docData.plant_health || 0,
-          })
+            humidity: docData.humidity,
+            light_intensity: docData.light_intensity,
+            timestamp: docData.timestamp,
+          }
+          
+          setSensorData(newData)
+          setAnalysisData(newData)
+          
+          // Update notifications list based on current sensor status
+          const currentNotifications: Array<{id: string, message: string, status: string, timestamp: Date, parameter: string}> = []
+          
+          // Check each parameter and add to notifications
+          const tempStatus = getParameterStatus('temp', newData.temp)
+          const soilStatus = getParameterStatus('soil', newData.soil)
+          const rainStatus = getParameterStatus('rain', newData.rain)
+          const healthStatus = getParameterStatus('plant_health', newData.plant_health)
+          
+          if (tempStatus === 'critical') {
+            currentNotifications.push({
+              id: `temp-${Date.now()}`,
+              message: `🚨 Temperature critical: ${newData.temp.toFixed(1)}°C`,
+              status: 'critical',
+              timestamp: new Date(),
+              parameter: 'temp'
+            })
+          } else if (tempStatus === 'warning') {
+            currentNotifications.push({
+              id: `temp-${Date.now()}`,
+              message: `⚠️ Temperature warning: ${newData.temp.toFixed(1)}°C`,
+              status: 'warning',
+              timestamp: new Date(),
+              parameter: 'temp'
+            })
+          } else {
+            currentNotifications.push({
+              id: `temp-${Date.now()}`,
+              message: `✅ Temperature optimal: ${newData.temp.toFixed(1)}°C`,
+              status: 'normal',
+              timestamp: new Date(),
+              parameter: 'temp'
+            })
+          }
+          
+          if (soilStatus === 'critical') {
+            currentNotifications.push({
+              id: `soil-${Date.now()}`,
+              message: `🚨 Soil moisture critical: ${newData.soil.toFixed(1)}%`,
+              status: 'critical',
+              timestamp: new Date(),
+              parameter: 'soil'
+            })
+          } else if (soilStatus === 'warning') {
+            currentNotifications.push({
+              id: `soil-${Date.now()}`,
+              message: `⚠️ Soil moisture warning: ${newData.soil.toFixed(1)}%`,
+              status: 'warning',
+              timestamp: new Date(),
+              parameter: 'soil'
+            })
+          } else {
+            currentNotifications.push({
+              id: `soil-${Date.now()}`,
+              message: `✅ Soil moisture optimal: ${newData.soil.toFixed(1)}%`,
+              status: 'normal',
+              timestamp: new Date(),
+              parameter: 'soil'
+            })
+          }
+          
+          if (rainStatus === 'critical') {
+            currentNotifications.push({
+              id: `rain-${Date.now()}`,
+              message: `🚨 Rainfall critical: ${newData.rain.toFixed(1)}mm`,
+              status: 'critical',
+              timestamp: new Date(),
+              parameter: 'rain'
+            })
+          } else if (rainStatus === 'warning') {
+            currentNotifications.push({
+              id: `rain-${Date.now()}`,
+              message: `⚠️ Rainfall warning: ${newData.rain.toFixed(1)}mm`,
+              status: 'warning',
+              timestamp: new Date(),
+              parameter: 'rain'
+            })
+          } else {
+            currentNotifications.push({
+              id: `rain-${Date.now()}`,
+              message: `✅ Rainfall normal: ${newData.rain.toFixed(1)}mm`,
+              status: 'normal',
+              timestamp: new Date(),
+              parameter: 'rain'
+            })
+          }
+          
+          if (healthStatus === 'critical') {
+            currentNotifications.push({
+              id: `health-${Date.now()}`,
+              message: `🚨 Plant health critical: ${newData.plant_health.toFixed(1)}%`,
+              status: 'critical',
+              timestamp: new Date(),
+              parameter: 'plant_health'
+            })
+          } else if (healthStatus === 'warning') {
+            currentNotifications.push({
+              id: `health-${Date.now()}`,
+              message: `⚠️ Plant health needs attention: ${newData.plant_health.toFixed(1)}%`,
+              status: 'warning',
+              timestamp: new Date(),
+              parameter: 'plant_health'
+            })
+          } else {
+            currentNotifications.push({
+              id: `health-${Date.now()}`,
+              message: `✅ Plant health excellent: ${newData.plant_health.toFixed(1)}%`,
+              status: 'normal',
+              timestamp: new Date(),
+              parameter: 'plant_health'
+            })
+          }
+          
+          if (newData.humidity !== undefined) {
+            const humidityStatus = getParameterStatus('humidity', newData.humidity)
+            if (humidityStatus === 'critical' || humidityStatus === 'warning') {
+              currentNotifications.push({
+                id: `humidity-${Date.now()}`,
+                message: `${humidityStatus === 'critical' ? '🚨' : '⚠️'} Humidity ${humidityStatus}: ${newData.humidity.toFixed(1)}%`,
+                status: humidityStatus,
+                timestamp: new Date(),
+                parameter: 'humidity'
+              })
+            }
+          }
+          
+          if (newData.light_intensity !== undefined) {
+            const lightStatus = getParameterStatus('light_intensity', newData.light_intensity)
+            if (lightStatus === 'critical' || lightStatus === 'warning') {
+              currentNotifications.push({
+                id: `light-${Date.now()}`,
+                message: `${lightStatus === 'critical' ? '🚨' : '⚠️'} Light intensity ${lightStatus}: ${newData.light_intensity.toFixed(1)}`,
+                status: lightStatus,
+                timestamp: new Date(),
+                parameter: 'light_intensity'
+              })
+            }
+          }
+          
+          setNotificationsList(currentNotifications)
+          
+          // Check for alerts only if notifications are enabled and data has changed
+          if (notificationsEnabled && previousAnalysisDataRef.current) {
+            const sensorReading: SensorReading = {
+              temp: newData.temp,
+              rain: newData.rain,
+              soil: newData.soil,
+              plant_health: newData.plant_health,
+              humidity: newData.humidity,
+              light_intensity: newData.light_intensity,
+              timestamp: newData.timestamp,
+            }
+            
+            const alerts = analyzeSensorReading(sensorReading)
+            if (alerts.length > 0) {
+              sendMultipleAlerts(alerts)
+            }
+          }
+          
+          previousAnalysisDataRef.current = newData
         }
+        setAnalysisLoading(false)
       })
 
       return () => unsubscribe()
     } catch (error) {
       console.error("Error fetching sensor data:", error)
+      setAnalysisLoading(false)
     }
+  }, [notificationsEnabled, sendMultipleAlerts])
+
+  // Fetch daily report data (last 24 hours)
+  useEffect(() => {
+    const fetchDailyData = async () => {
+      try {
+        const now = new Date()
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+        
+        const sensorRef = collection(db, "sensor_data")
+        const q = query(
+          sensorRef,
+          where("timestamp", ">=", yesterday),
+          where("timestamp", "<=", now),
+          orderBy("timestamp", "asc")
+        )
+
+        const snapshot = await getDocs(q)
+        const readings: SensorReading[] = snapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            temp: data.temp || 0,
+            rain: data.rain || 0,
+            soil: data.soil || 0,
+            plant_health: data.plant_health || 0,
+            humidity: data.humidity,
+            light_intensity: data.light_intensity,
+            timestamp: data.timestamp,
+          }
+        })
+        
+        setDailyReadings(readings)
+        
+        if (readings.length > 0) {
+          const dateStr = now.toISOString().split('T')[0]
+          const report = generateDailyHealthReport(readings, dateStr)
+          setDailyReport(report)
+        }
+      } catch (error) {
+        console.error("Error fetching daily data:", error)
+      }
+    }
+
+    fetchDailyData()
+    // Refresh every 30 minutes
+    const interval = setInterval(fetchDailyData, 30 * 60 * 1000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -503,6 +750,24 @@ export default function Dashboard() {
     }
   }
 
+  const toggleNotifications = () => {
+    setNotificationsEnabled(!notificationsEnabled)
+    if (!notificationsEnabled) {
+      sendInfoNotification("Notifications enabled")
+    } else {
+      sendInfoNotification("Notifications disabled")
+    }
+  }
+
+  const getParameterStatusInfo = (param: string, value: number) => {
+    const status = getParameterStatus(param, value)
+    const statusBg = getStatusBgColor(status)
+    const statusEmoji = status === 'normal' ? '✅' : status === 'warning' ? '⚠️' : '🚨'
+    const statusText = status === 'normal' ? 'Normal' : status === 'warning' ? 'Warning' : 'Critical'
+    
+    return { statusBg, statusEmoji, statusText, status }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 transition-colors duration-300">
       {/* Header */}
@@ -522,16 +787,62 @@ export default function Dashboard() {
                 className="p-2 hover:bg-muted rounded-lg transition relative"
               >
                 <Bell className="h-5 w-5 text-muted-foreground" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full" />
+                {notificationsList.some(n => n.status === 'critical' || n.status === 'warning') && (
+                  <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full animate-pulse" />
+                )}
               </button>
               {showNotifications && (
-                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-800 border border-border rounded-lg shadow-lg p-4 z-50">
-                  <p className="font-semibold text-sm mb-2">Notifications</p>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Soil moisture optimal</p>
-                    <p>• Rain expected tomorrow</p>
-                    <p>• Plant health excellent</p>
+                <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white dark:bg-slate-800 border border-border rounded-lg shadow-lg z-50">
+                  <div className="p-4 border-b border-border sticky top-0 bg-white dark:bg-slate-800">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-sm">Live Notifications</p>
+                      <Badge variant={notificationsList.some(n => n.status === 'critical') ? 'destructive' : 'default'}>
+                        {notificationsList.filter(n => n.status === 'critical' || n.status === 'warning').length} alerts
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Updated: {new Date().toLocaleTimeString()}
+                    </p>
                   </div>
+                  <div className="p-2 space-y-1">
+                    {notificationsList.length > 0 ? (
+                      notificationsList.map((notification) => {
+                        const bgColor = notification.status === 'critical' 
+                          ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800' 
+                          : notification.status === 'warning'
+                          ? 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800'
+                          : 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800'
+                        
+                        return (
+                          <div 
+                            key={notification.id} 
+                            className={`p-3 rounded-lg border ${bgColor} transition-all hover:scale-[1.02]`}
+                          >
+                            <p className="text-sm font-medium">{notification.message}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {notification.timestamp.toLocaleTimeString('en-US', { 
+                                hour: '2-digit', 
+                                minute: '2-digit',
+                                second: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <div className="p-6 text-center text-muted-foreground">
+                        <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No notifications</p>
+                      </div>
+                    )}
+                  </div>
+                  {notificationsList.some(n => n.status === 'critical' || n.status === 'warning') && (
+                    <div className="p-3 border-t border-border bg-gray-50 dark:bg-slate-900">
+                      <p className="text-xs text-center text-muted-foreground">
+                        ⚡ Real-time monitoring active
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -586,6 +897,10 @@ export default function Dashboard() {
           <TabsList className="mb-6">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="weather">Weather & Map</TabsTrigger>
+            <TabsTrigger value="analysis">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Analysis Dashboard
+            </TabsTrigger>
             <TabsTrigger value="news">
               <Newspaper className="h-4 w-4 mr-2" />
               News
@@ -876,6 +1191,383 @@ export default function Dashboard() {
                   <WeatherMap latitude={currentLat} longitude={currentLon} onLocationChange={handleLocationChange} />
                 </CardContent>
               </Card>
+            </div>
+          </TabsContent>
+
+          {/* Analysis Dashboard Tab */}
+          <TabsContent value="analysis" className="space-y-8">
+            <div className="mb-8 flex justify-between items-start">
+              <div>
+                <h2 className="text-3xl font-bold tracking-tight text-foreground mb-2">Analysis Dashboard</h2>
+                <p className="text-muted-foreground">Monitor your IoT sensor data in real-time from Firestore</p>
+              </div>
+              <Button
+                variant={notificationsEnabled ? "default" : "outline"}
+                size="sm"
+                onClick={toggleNotifications}
+              >
+                {notificationsEnabled ? <Bell className="w-4 h-4 mr-2" /> : <BellOff className="w-4 h-4 mr-2" />}
+                {notificationsEnabled ? "Notifications On" : "Notifications Off"}
+              </Button>
+            </div>
+
+            {/* Real-Time Monitoring Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              <Card className={analysisData ? getParameterStatusInfo('temp', analysisData.temp).statusBg : "bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 border-red-200 dark:border-red-800"}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex justify-between items-center">
+                    <span>🌡️ Temperature</span>
+                    {analysisData && (
+                      <Badge variant={getParameterStatusInfo('temp', analysisData.temp).status === 'normal' ? 'default' : getParameterStatusInfo('temp', analysisData.temp).status === 'warning' ? 'secondary' : 'destructive'}>
+                        {getParameterStatusInfo('temp', analysisData.temp).statusEmoji}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analysisLoading ? (
+                    <div className="animate-pulse">
+                      <div className="h-8 bg-red-200 dark:bg-red-800 rounded w-20"></div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-3xl font-bold">
+                        {analysisData?.temp.toFixed(2) || "N/A"}°C
+                      </div>
+                      <p className="text-xs mt-1">
+                        {analysisData && getParameterStatusInfo('temp', analysisData.temp).statusText}
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className={analysisData ? getParameterStatusInfo('rain', analysisData.rain).statusBg : "bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800"}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex justify-between items-center">
+                    <span>🌧️ Rainfall</span>
+                    {analysisData && (
+                      <Badge variant={getParameterStatusInfo('rain', analysisData.rain).status === 'normal' ? 'default' : getParameterStatusInfo('rain', analysisData.rain).status === 'warning' ? 'secondary' : 'destructive'}>
+                        {getParameterStatusInfo('rain', analysisData.rain).statusEmoji}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analysisLoading ? (
+                    <div className="animate-pulse">
+                      <div className="h-8 bg-blue-200 dark:bg-blue-800 rounded w-20"></div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-3xl font-bold">
+                        {analysisData?.rain.toFixed(2) || "N/A"} mm
+                      </div>
+                      <p className="text-xs mt-1">
+                        {analysisData && getParameterStatusInfo('rain', analysisData.rain).statusText}
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className={analysisData ? getParameterStatusInfo('soil', analysisData.soil).statusBg : "bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 border-green-200 dark:border-green-800"}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex justify-between items-center">
+                    <span>🌱 Soil Moisture</span>
+                    {analysisData && (
+                      <Badge variant={getParameterStatusInfo('soil', analysisData.soil).status === 'normal' ? 'default' : getParameterStatusInfo('soil', analysisData.soil).status === 'warning' ? 'secondary' : 'destructive'}>
+                        {getParameterStatusInfo('soil', analysisData.soil).statusEmoji}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analysisLoading ? (
+                    <div className="animate-pulse">
+                      <div className="h-8 bg-green-200 dark:bg-green-800 rounded w-20"></div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-3xl font-bold">
+                        {analysisData?.soil.toFixed(2) || "N/A"}%
+                      </div>
+                      <p className="text-xs mt-1">
+                        {analysisData && getParameterStatusInfo('soil', analysisData.soil).statusText}
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className={analysisData ? getParameterStatusInfo('plant_health', analysisData.plant_health).statusBg : "bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-950 dark:to-yellow-900 border-yellow-200 dark:border-yellow-800"}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex justify-between items-center">
+                    <span>🌿 Plant Health</span>
+                    {analysisData && (
+                      <Badge variant={getParameterStatusInfo('plant_health', analysisData.plant_health).status === 'normal' ? 'default' : getParameterStatusInfo('plant_health', analysisData.plant_health).status === 'warning' ? 'secondary' : 'destructive'}>
+                        {getParameterStatusInfo('plant_health', analysisData.plant_health).statusEmoji}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analysisLoading ? (
+                    <div className="animate-pulse">
+                      <div className="h-8 bg-yellow-200 dark:bg-yellow-800 rounded w-20"></div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-3xl font-bold">
+                        {analysisData?.plant_health.toFixed(2) || "N/A"}%
+                      </div>
+                      <p className="text-xs mt-1">
+                        {analysisData && getParameterStatusInfo('plant_health', analysisData.plant_health).statusText}
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+            
+            <FirebaseGraph />
+            
+            {/* Daily Data Analysis Section */}
+            <div className="mt-8 space-y-6">
+              <div className="flex items-center gap-3 mb-4">
+                <BarChart3 className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                <h2 className="text-3xl font-bold">📊 Daily Data Analysis</h2>
+              </div>
+              
+              {dailyReport ? (
+                <>
+                  {/* Overall Health Score Card */}
+                  <Card className={`border-2 ${
+                    dailyReport.overallStatus === 'Healthy' 
+                      ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
+                      : dailyReport.overallStatus === 'Moderate'
+                      ? 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800'
+                      : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+                  }`}>
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between">
+                        <span>Daily Plant Health Report</span>
+                        <Badge variant="outline" className="text-sm">
+                          <Calendar className="w-3 h-3 mr-1" />
+                          {dailyReport.date}
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div className="flex flex-col items-center justify-center p-6 bg-white dark:bg-gray-800 rounded-lg">
+                          <div className="text-7xl font-bold ${
+                            dailyReport.overallStatus === 'Healthy'
+                              ? 'text-green-600 dark:text-green-400'
+                              : dailyReport.overallStatus === 'Moderate'
+                              ? 'text-yellow-600 dark:text-yellow-400'
+                              : 'text-red-600 dark:text-red-400'
+                          }">
+                            {dailyReport.overallHealthScore}
+                          </div>
+                          <div className="text-2xl font-light text-gray-400">/100</div>
+                          <div className="mt-4 text-2xl font-bold flex items-center gap-2 ${
+                            dailyReport.overallStatus === 'Healthy'
+                              ? 'text-green-600 dark:text-green-400'
+                              : dailyReport.overallStatus === 'Moderate'
+                              ? 'text-yellow-600 dark:text-yellow-400'
+                              : 'text-red-600 dark:text-red-400'
+                          }">
+                            {dailyReport.overallStatus === 'Healthy' && <CheckCircle className="w-6 h-6" />}
+                            {dailyReport.overallStatus === 'Moderate' && <AlertTriangle className="w-6 h-6" />}
+                            {dailyReport.overallStatus === 'Poor' && <AlertTriangle className="w-6 h-6" />}
+                            {dailyReport.overallStatus}
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <h3 className="font-semibold text-lg mb-3">24-Hour Summary</h3>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded">
+                              <span>🌱 Avg Soil Moisture:</span>
+                              <span className="font-bold">{dailyReport.statistics.avgSoilMoisture.toFixed(1)}%</span>
+                            </div>
+                            <div className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded">
+                              <span>🌡️ Avg Temperature:</span>
+                              <span className="font-bold">{dailyReport.statistics.avgTemperature.toFixed(1)}°C</span>
+                            </div>
+                            <div className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded">
+                              <span>🌧️ Total Rainfall:</span>
+                              <span className="font-bold">{dailyReport.statistics.totalRainfall.toFixed(2)} mm</span>
+                            </div>
+                            <div className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded">
+                              <span>🌿 Avg Plant Health:</span>
+                              <span className="font-bold">{dailyReport.statistics.avgPlantHealth.toFixed(1)}%</span>
+                            </div>
+                            {dailyReport.statistics.avgHumidity > 0 && (
+                              <div className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded">
+                                <span>💧 Avg Humidity:</span>
+                                <span className="font-bold">{dailyReport.statistics.avgHumidity.toFixed(1)}%</span>
+                              </div>
+                            )}
+                            {dailyReport.statistics.avgLightIntensity > 0 && (
+                              <div className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded">
+                                <span>☀️ Avg Light Intensity:</span>
+                                <span className="font-bold">{dailyReport.statistics.avgLightIntensity.toFixed(1)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between p-2 bg-blue-100 dark:bg-blue-900 rounded">
+                              <span>📊 Total Readings:</span>
+                              <span className="font-bold">{dailyReport.statistics.readingsCount}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Parameter-wise Status */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Parameter-wise Status</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {dailyReport.parameterWiseStatus.map((param, idx) => {
+                          const statusColor = param.status === 'normal' 
+                            ? 'text-green-600 dark:text-green-400' 
+                            : param.status === 'warning'
+                            ? 'text-yellow-600 dark:text-yellow-400'
+                            : 'text-red-600 dark:text-red-400'
+                          
+                          const statusBg = param.status === 'normal' 
+                            ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800' 
+                            : param.status === 'warning'
+                            ? 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800'
+                            : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+
+                          const statusIcon = param.status === 'normal' ? '✅' : param.status === 'warning' ? '⚠️' : '🚨'
+
+                          return (
+                            <div key={idx} className={`p-4 rounded-lg border ${statusBg}`}>
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <div className="font-semibold">
+                                    {statusIcon} {param.displayName}
+                                  </div>
+                                  <div className="text-xs capitalize mt-1">
+                                    Status: <span className={statusColor}>{param.status}</span>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className={`text-2xl font-bold ${statusColor}`}>
+                                    {param.avgValue.toFixed(1)}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {param.parameter === 'rain' ? 'mm' : param.parameter === 'temp' ? '°C' : '%'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Critical Events */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between">
+                        <span>Critical Events Timeline</span>
+                        <Badge variant={dailyReport.criticalEvents.length > 0 ? 'destructive' : 'default'}>
+                          {dailyReport.criticalEvents.length} events
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {dailyReport.criticalEvents.length > 0 ? (
+                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                          {dailyReport.criticalEvents.slice(0, 10).map((event, idx) => {
+                            const isCritical = event.status === 'critical'
+                            return (
+                              <div key={idx} className={`p-3 rounded-lg border ${
+                                isCritical 
+                                  ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+                                  : 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800'
+                              }`}>
+                                <div className="flex justify-between items-start text-sm">
+                                  <div className="flex-1">
+                                    <span className="font-medium">
+                                      {isCritical ? '🚨' : '⚠️'} {event.message}
+                                    </span>
+                                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                      {event.timestamp.toLocaleTimeString()}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-green-600 dark:text-green-400">
+                          <CheckCircle className="w-12 h-12 mx-auto mb-2" />
+                          <p className="font-semibold">All Clear!</p>
+                          <p className="text-sm">No critical events in the last 24 hours.</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Recommendations */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Recommendations for Next Day</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {dailyReport.recommendations.map((rec, idx) => (
+                          <div key={idx} className="flex gap-3 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+                              {idx + 1}
+                            </div>
+                            <div className="flex-1 text-sm">
+                              <p>{rec}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Auto Report Generation Info */}
+                  <Card className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950 dark:to-pink-950 border-purple-200 dark:border-purple-800">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-3">
+                        <div className="text-3xl">🤖</div>
+                        <div>
+                          <h3 className="font-semibold">Auto Report Generation</h3>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            This report is automatically generated every 30 minutes based on the last 24 hours of sensor data.
+                            Reports are saved to the database for historical tracking.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-center py-8">
+                      <BarChart3 className="w-16 h-16 mx-auto mb-4 text-gray-400 animate-pulse" />
+                      <p className="text-gray-600 dark:text-gray-400">Loading daily analysis report...</p>
+                      <p className="text-sm text-gray-500 mt-2">Collecting 24-hour sensor data</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </TabsContent>
 

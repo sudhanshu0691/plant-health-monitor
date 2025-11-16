@@ -1,6 +1,8 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Analytics } from "@vercel/analytics/next"
+import { Toaster } from "@/components/ui/sonner"
+import { NotificationProvider } from "@/contexts/NotificationContext"
 import "./globals.css"
 
 // Removed `next/font/google` usage because Turbopack/Next internal
@@ -39,7 +41,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <body className={`font-sans antialiased bg-gradient-to-br from-green-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 transition-colors duration-300`}>
-        {children}
+        <NotificationProvider>
+          {children}
+          <Toaster position="top-right" richColors expand={true} />
+        </NotificationProvider>
         <Analytics />
       </body>
     </html>

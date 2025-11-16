@@ -1,6 +1,6 @@
 // lib/firebase.ts
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, collection, onSnapshot, query, orderBy, limit, getDocs, Firestore } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot, query, orderBy, limit, getDocs, where, Firestore } from "firebase/firestore";
 import { getAnalytics, Analytics } from "firebase/analytics";
 
 const firebaseConfig = {
@@ -25,5 +25,5 @@ if (typeof window !== 'undefined') {
   analytics = getAnalytics(app);
 }
 
-export { db, collection, onSnapshot, query, orderBy, limit, getDocs, analytics };
+export { db, collection, onSnapshot, query, orderBy, limit, getDocs, where, analytics };
 export default app;
