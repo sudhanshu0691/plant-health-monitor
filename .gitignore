@@ -19,11 +19,6 @@ yarn-error.log*
 # env files
 .env*
 
-# Firebase credentials
-serviceAccountKey.json
-**/serviceAccountKey.json
-agro dumi data/
-
 # vercel
 .vercel
 
