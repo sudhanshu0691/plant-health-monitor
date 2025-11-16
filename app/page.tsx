@@ -20,6 +20,7 @@ import {
   Eye,
   Mic,
   MicOff,
+  Newspaper,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import SoilMoistureChart from "@/components/soil-moisture-chart"
@@ -28,6 +29,9 @@ import RainfallChart from "@/components/rainfall-chart"
 import PlantHealthChart from "@/components/plant-health-chart"
 import ReactMarkdown from "react-markdown"
 import WeatherMap from "@/components/weather-map"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { AgricultureNews } from "@/components/agriculture-news"
+import { motion, AnimatePresence } from "framer-motion"
 
 // Error boundary to catch render-time errors from `react-markdown`
 class MarkdownErrorBoundary extends Component<React.PropsWithChildren<{ fallback?: React.ReactNode }>, { hasError: boolean }> {
@@ -479,9 +483,9 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900">
+    <div className="min-h-screen bg-gradient-to-b from-green-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 transition-colors duration-300">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b bg-white/80 backdrop-blur-sm dark:bg-slate-900/80">
+      <header className="sticky top-0 z-50 border-b bg-white/80 backdrop-blur-sm dark:bg-slate-900/80 shadow-sm transition-colors duration-300">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
             <Leaf className="h-8 w-8 text-green-600 dark:text-green-400" />
@@ -490,6 +494,7 @@ export default function Dashboard() {
 
           {/* Notifications Icon */}
           <div className="flex items-center gap-4">
+            <ThemeToggle />
             <div className="relative">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
@@ -560,6 +565,10 @@ export default function Dashboard() {
           <TabsList className="mb-6">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="weather">Weather & Map</TabsTrigger>
+            <TabsTrigger value="news">
+              <Newspaper className="h-4 w-4 mr-2" />
+              News
+            </TabsTrigger>
           </TabsList>
 
           {/* Dashboard Tab */}
@@ -846,123 +855,187 @@ export default function Dashboard() {
               </Card>
             </div>
           </TabsContent>
+
+          {/* News Tab */}
+          <TabsContent value="news" className="space-y-8">
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold tracking-tight text-foreground mb-2">Agriculture News</h2>
+              <p className="text-muted-foreground">Stay updated with the latest farming and agriculture news</p>
+            </div>
+
+            <AgricultureNews />
+          </TabsContent>
         </Tabs>
       </main>
 
       {/* Chat Panel Sidebar */}
-      {showChatPanel && (
-        <div className="fixed right-0 top-16 h-[calc(100vh-4rem)] w-96 bg-white dark:bg-slate-900 border-l shadow-xl z-40">
-          <Card className="h-full rounded-none border-0">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle>Farmers AI Chat</CardTitle>
-              <button onClick={() => setShowChatPanel(false)} className="text-muted-foreground hover:text-foreground">
-                ✕
-              </button>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col h-[calc(100%-5rem)] overflow-hidden">
-              {micError && (
-                <div className="mb-2 p-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded text-xs text-red-600 dark:text-red-400">
-                  {micError}
-                </div>
-              )}
-              <div className="flex-1 overflow-y-auto space-y-4 mb-4">
-                {messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <Leaf className="h-10 w-10 text-green-500 mb-2" />
-                    <p className="text-sm font-semibold">Welcome to AI Chat</p>
-                    <p className="text-xs text-muted-foreground mt-1">Ask about plant care & farming</p>
-                  </div>
-                ) : (
-                  <>
-                    {messages.map((msg) => (
-                      <div key={msg.id} className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
-                        <div
-                          className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
-                            msg.sender === "user"
-                              ? "bg-primary text-primary-foreground rounded-br-none"
-                              : "bg-card border border-border text-card-foreground rounded-bl-none"
-                          }`}
-                        >
-                          {msg.sender === "bot" ? (
-                            <div className="prose prose-sm dark:prose-invert max-w-none">
-                              <MarkdownErrorBoundary fallback={<div className="text-sm text-muted-foreground">Preview unavailable</div>}>
-                                <ReactMarkdown>{msg.text}</ReactMarkdown>
-                              </MarkdownErrorBoundary>
-                            </div>
-                          ) : (
-                            msg.text
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {chatLoading && (
-                      <div className="flex justify-start">
-                        <div className="bg-card border border-border px-3 py-2 rounded-lg">
-                          <div className="flex gap-1">
-                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
-                            <div
-                              className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                              style={{ animationDelay: "0.1s" }}
-                            />
-                            <div
-                              className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                              style={{ animationDelay: "0.2s" }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    <div ref={scrollRef} />
-                  </>
+      <AnimatePresence>
+        {showChatPanel && (
+          <motion.div
+            initial={{ x: 400, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 400, opacity: 0 }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="fixed right-0 top-16 h-[calc(100vh-4rem)] w-96 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-l shadow-2xl z-40"
+          >
+            <Card className="h-full rounded-none border-0 bg-transparent shadow-none">
+              <CardHeader className="flex flex-row items-center justify-between pb-3 border-b dark:border-slate-800">
+                <CardTitle className="flex items-center gap-2">
+                  <MessageCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  Farmers AI Assistant
+                </CardTitle>
+                <Button
+                  onClick={() => setShowChatPanel(false)}
+                  variant="ghost"
+                  size="icon"
+                  className="hover:bg-muted transition-all duration-200 hover:rotate-90"
+                >
+                  ✕
+                </Button>
+              </CardHeader>
+              <CardContent className="flex-1 flex flex-col h-[calc(100%-5rem)] overflow-hidden p-4">
+                {micError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-2 p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-600 dark:text-red-400 backdrop-blur-sm"
+                  >
+                    {micError}
+                  </motion.div>
                 )}
-              </div>
+                <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 custom-scrollbar">
+                  {messages.length === 0 ? (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex flex-col items-center justify-center h-full text-center"
+                    >
+                      <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-full mb-4">
+                        <Leaf className="h-12 w-12 text-green-600 dark:text-green-400" />
+                      </div>
+                      <p className="text-base font-semibold text-foreground">Welcome to AI Chat</p>
+                      <p className="text-sm text-muted-foreground mt-2 max-w-xs">
+                        Ask me anything about plant care, farming techniques, or crop management
+                      </p>
+                    </motion.div>
+                  ) : (
+                    <>
+                      <AnimatePresence mode="popLayout">
+                        {messages.map((msg, index) => (
+                          <motion.div
+                            key={msg.id}
+                            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.3 }}
+                            className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
+                          >
+                            <div
+                              className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm shadow-sm transition-all duration-200 hover:shadow-md ${
+                                msg.sender === "user"
+                                  ? "bg-gradient-to-br from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 text-white rounded-br-sm"
+                                  : "bg-white dark:bg-slate-800 border border-border text-foreground rounded-bl-sm"
+                              }`}
+                            >
+                              {msg.sender === "bot" ? (
+                                <div className="prose prose-sm dark:prose-invert max-w-none">
+                                  <MarkdownErrorBoundary
+                                    fallback={<div className="text-sm text-muted-foreground">Preview unavailable</div>}
+                                  >
+                                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                                  </MarkdownErrorBoundary>
+                                </div>
+                              ) : (
+                                <p>{msg.text}</p>
+                              )}
+                            </div>
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                      {chatLoading && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="flex justify-start"
+                        >
+                          <div className="bg-white dark:bg-slate-800 border border-border px-4 py-3 rounded-2xl rounded-bl-sm shadow-sm">
+                            <div className="flex gap-1">
+                              <motion.div
+                                animate={{ y: [0, -8, 0] }}
+                                transition={{ duration: 0.6, repeat: Infinity, ease: "easeInOut" }}
+                                className="w-2 h-2 bg-green-600 dark:bg-green-400 rounded-full"
+                              />
+                              <motion.div
+                                animate={{ y: [0, -8, 0] }}
+                                transition={{ duration: 0.6, repeat: Infinity, ease: "easeInOut", delay: 0.2 }}
+                                className="w-2 h-2 bg-green-600 dark:bg-green-400 rounded-full"
+                              />
+                              <motion.div
+                                animate={{ y: [0, -8, 0] }}
+                                transition={{ duration: 0.6, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
+                                className="w-2 h-2 bg-green-600 dark:bg-green-400 rounded-full"
+                              />
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                      <div ref={scrollRef} />
+                    </>
+                  )}
+                </div>
 
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Ask about farming..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault()
-                      sendMessage()
-                    }
-                  }}
-                  disabled={chatLoading}
-                  className="bg-background text-sm"
-                />
-                <Button
-                  onClick={toggleMicrophone}
-                  size="sm"
-                  variant={isListening ? "destructive" : "outline"}
-                  className="px-3"
-                  title={isListening ? "Stop listening" : "Start listening"}
-                >
-                  {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                </Button>
-                <Button
-                  onClick={sendMessage}
-                  disabled={chatLoading || !input.trim()}
-                  size="sm"
-                  className="bg-primary hover:bg-primary/90"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+                <div className="flex gap-2 pt-3 border-t dark:border-slate-800">
+                  <Input
+                    placeholder="Ask about farming..."
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        sendMessage()
+                      }
+                    }}
+                    disabled={chatLoading}
+                    className="bg-background border-2 text-sm focus:border-green-500 dark:focus:border-green-600 transition-colors"
+                  />
+                  <Button
+                    onClick={toggleMicrophone}
+                    size="sm"
+                    variant={isListening ? "destructive" : "outline"}
+                    className={`px-3 transition-all duration-300 ${isListening ? "animate-pulse" : ""}`}
+                    title={isListening ? "Stop listening" : "Start listening"}
+                  >
+                    {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    onClick={sendMessage}
+                    disabled={chatLoading || !input.trim()}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 transition-all duration-200 hover:scale-105"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Floating Chat Button */}
       {!showChatPanel && (
-        <button
+        <motion.button
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => setShowChatPanel(true)}
-          className="fixed bottom-6 right-6 p-4 bg-green-600 hover:bg-green-700 text-white rounded-full shadow-lg transition-all duration-300 hover:scale-110 z-40"
+          className="fixed bottom-6 right-6 p-4 bg-gradient-to-br from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 dark:from-green-700 dark:to-green-800 dark:hover:from-green-800 dark:hover:to-green-900 text-white rounded-full shadow-2xl transition-all duration-300 z-40 group"
           title="Open Chat"
         >
-          <MessageCircle className="h-6 w-6" />
-        </button>
+          <MessageCircle className="h-6 w-6 group-hover:scale-110 transition-transform" />
+          <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full animate-pulse" />
+        </motion.button>
       )}
 
       {/* Footer */}
